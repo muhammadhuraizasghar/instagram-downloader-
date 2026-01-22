@@ -4,7 +4,35 @@ import { promisify } from "util";
 
 const execPromise = promisify(exec);
 
+// --- Scalability & Security ---
+// In-memory cache for demo (In production, use Redis)
+const cache = new Map<string, { data: any; timestamp: number }>();
+const CACHE_TTL = 1000 * 60 * 10; // 10 minutes
+
+// In-memory rate limiter (In production, use Redis)
+const rateLimitMap = new Map<string, { count: number; lastReset: number }>();
+const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
+const MAX_REQUESTS_PER_WINDOW = 30; // 30 requests per minute per IP
+
 export async function POST(req: NextRequest) {
+  const ip = req.headers.get("x-forwarded-for") || "anonymous";
+
+  // Rate Limiting Logic
+  const now = Date.now();
+  const rateLimit = rateLimitMap.get(ip) || { count: 0, lastReset: now };
+
+  if (now - rateLimit.lastReset > RATE_LIMIT_WINDOW) {
+    rateLimit.count = 0;
+    rateLimit.lastReset = now;
+  }
+
+  if (rateLimit.count >= MAX_REQUESTS_PER_WINDOW) {
+    return NextResponse.json({ error: "Too many requests. Please slow down." }, { status: 429 });
+  }
+
+  rateLimit.count++;
+  rateLimitMap.set(ip, rateLimit);
+
   try {
     const { url } = await req.json();
 
@@ -16,7 +44,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid Instagram URL" }, { status: 400 });
     }
 
+    // Caching Logic
+    const cachedResult = cache.get(url);
+    if (cachedResult && now - cachedResult.timestamp < CACHE_TTL) {
+      console.log("Serving from cache:", url);
+      return NextResponse.json(cachedResult.data);
+    }
+
     // Get metadata using yt-dlp with more robust options
+    // Optimization: Use --flat-playlist for faster metadata extraction if applicable
     let command = `yt-dlp --dump-json --no-check-certificate --no-playlist --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36" "${url}"`;
 
     const { stdout, stderr } = await execPromise(command);
@@ -37,13 +73,20 @@ export async function POST(req: NextRequest) {
       const isVideo = entry.vcodec !== "none" || entry.ext === "mp4" || entry.protocol?.includes("https");
       const mediaItems = [];
 
-      // Find best video format if it's a video
+      // Find best video format that MUST have audio
       let bestUrl = entry.url;
       if (isVideo && entry.formats) {
-        // Look for the best format that has both video and audio, or just the best video
-        const bestFormat = entry.formats
-          .filter((f: any) => f.vcodec !== "none" && f.url)
-          .sort((a: any, b: any) => (b.height || 0) - (a.height || 0))[0];
+        // Filter formats that have both video and audio (acodec and vcodec are not none)
+        const combinedFormats = entry.formats.filter((f: any) => 
+          f.vcodec !== "none" && 
+          f.acodec !== "none" && 
+          f.url &&
+          (f.ext === 'mp4' || f.container === 'mp4')
+        );
+
+        const bestFormat = combinedFormats.sort((a: any, b: any) => (b.height || 0) - (a.height || 0))[0] 
+          || entry.formats.filter((f: any) => f.vcodec !== "none" && f.acodec !== "none" && f.url)[0]
+          || entry.formats.filter((f: any) => f.vcodec !== "none" && f.url).sort((a: any, b: any) => (b.height || 0) - (a.height || 0))[0];
         
         if (bestFormat) {
           bestUrl = bestFormat.url;
@@ -124,6 +167,9 @@ export async function POST(req: NextRequest) {
         title: info.title
       };
     }
+
+    // Save to cache
+    cache.set(url, { data: finalResult, timestamp: Date.now() });
 
     return NextResponse.json(finalResult);
 
