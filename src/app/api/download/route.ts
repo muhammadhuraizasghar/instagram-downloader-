@@ -17,8 +17,6 @@ export async function POST(req: NextRequest) {
     }
 
     // Get metadata using yt-dlp
-    // --dump-json: get all info
-    // --no-playlist: only the specific post
     let command = `yt-dlp --dump-json --no-check-certificate --no-playlist "${url}"`;
 
     const { stdout, stderr } = await execPromise(command);
@@ -30,20 +28,22 @@ export async function POST(req: NextRequest) {
 
     const info = JSON.parse(stdout);
 
-    // Process items (handling potential carousel/playlist structure)
     const processEntry = (entry: any) => {
       const isVideo = entry.vcodec !== "none";
       const mediaItems = [];
 
-      // Always add the primary media (Video or Image)
+      // Add Video/Image
       mediaItems.push({
         type: isVideo ? "video" : "image",
         url: entry.url,
         thumbnail: entry.thumbnail,
-        title: entry.title || "Media"
+        title: entry.title || "Media",
+        resolution: `${entry.width}x${entry.height}`,
+        ext: entry.ext,
+        filesize: entry.filesize_approx || entry.filesize || "Unknown"
       });
 
-      // If it's a video, find the best audio-only format
+      // If it's a video, add Audio option
       if (isVideo) {
         const audioFormat = entry.formats
           .filter((f: any) => f.vcodec === "none" && f.acodec !== "none")
@@ -54,30 +54,51 @@ export async function POST(req: NextRequest) {
             type: "audio",
             url: audioFormat.url,
             thumbnail: entry.thumbnail,
-            title: entry.title ? `${entry.title} (Audio)` : "Audio"
+            title: entry.title ? `${entry.title} (Audio)` : "Audio",
+            resolution: "Audio only",
+            ext: audioFormat.ext || "mp3",
+            filesize: audioFormat.filesize || audioFormat.filesize_approx || "Unknown"
           });
         }
       }
 
-      return mediaItems;
+      // Collect Metadata for this specific entry
+      const metadata = {
+        uploader: entry.uploader || entry.uploader_id || "Unknown",
+        uploader_url: entry.uploader_url || "",
+        upload_date: entry.upload_date || "Unknown",
+        description: entry.description || "No description",
+        view_count: entry.view_count || 0,
+        like_count: entry.like_count || 0,
+        comment_count: entry.comment_count || 0,
+        duration: entry.duration ? `${Math.floor(entry.duration / 60)}:${(entry.duration % 60).toString().padStart(2, '0')}` : "N/A",
+        webpage_url: entry.webpage_url || url,
+        tags: entry.tags || []
+      };
+
+      return { items: mediaItems, metadata };
     };
 
     let finalResult;
 
     if (info.entries) {
-      // It's a carousel or multiple items
-      const allItems = info.entries.flatMap((entry: any) => processEntry(entry));
+      const processedEntries = info.entries.map((entry: any) => processEntry(entry));
       finalResult = {
         type: "carousel",
-        items: allItems,
-        title: info.title
+        entries: processedEntries,
+        title: info.title,
+        main_metadata: {
+          uploader: info.uploader || info.uploader_id,
+          upload_date: info.upload_date,
+          description: info.description
+        }
       };
     } else {
-      // Single item
-      const items = processEntry(info);
+      const processed = processEntry(info);
       finalResult = {
-        type: items.length > 1 ? "multi-format" : items[0].type,
-        items: items,
+        type: "single",
+        items: processed.items,
+        metadata: processed.metadata,
         title: info.title
       };
     }
