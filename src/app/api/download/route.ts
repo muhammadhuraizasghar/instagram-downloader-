@@ -51,20 +51,46 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(cachedResult.data);
     }
 
-    // Get metadata using yt-dlp with more robust options
-    // Optimization: Use --flat-playlist for faster metadata extraction if applicable
-    let command = `yt-dlp --dump-json --no-check-certificate --no-playlist --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36" "${url}"`;
+    // Get metadata using yt-dlp with more robust options to bypass blocks
+    // Added --force-ipv4 and more realistic headers
+    const commonArgs = [
+      '--dump-json',
+      '--no-check-certificate',
+      '--no-playlist',
+      '--force-ipv4',
+      '--geo-bypass',
+      '--user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"',
+      '--add-header "Referer:https://www.instagram.com/"',
+      '--add-header "Accept:text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"',
+      '--add-header "Accept-Language:en-US,en;q=0.9"',
+    ].join(' ');
 
-    const { stdout, stderr } = await execPromise(command);
+    let command = `yt-dlp ${commonArgs} "${url}"`;
 
-    if (stderr && !stdout) {
-      console.error("yt-dlp error:", stderr);
-      // Try a simpler command if the first one fails
-      command = `yt-dlp --dump-json "${url}"`;
-      const retry = await execPromise(command);
-      if (retry.stderr && !retry.stdout) {
-        return NextResponse.json({ error: "Could not fetch media. Link might be private or restricted." }, { status: 403 });
+    let stdout, stderr;
+    try {
+      const result = await execPromise(command);
+      stdout = result.stdout;
+      stderr = result.stderr;
+    } catch (err: any) {
+      console.error("First attempt failed:", err.message);
+      // Retry with a slightly different approach if failed
+      const retryCommand = `yt-dlp --dump-json --no-check-certificate --no-playlist "${url}"`;
+      console.log("Retrying with simpler command...");
+      try {
+        const retryResult = await execPromise(retryCommand);
+        stdout = retryResult.stdout;
+        stderr = retryResult.stderr;
+      } catch (retryErr: any) {
+        console.error("Second attempt failed:", retryErr.message);
+        return NextResponse.json({ 
+          error: "Instagram is temporarily blocking requests. Please try again in a few minutes or check if the link is public." 
+        }, { status: 403 });
       }
+    }
+
+    if (!stdout) {
+      return NextResponse.json({ error: "Could not fetch media. Instagram might be blocking the request." }, { status: 403 });
     }
 
     const info = JSON.parse(stdout);
