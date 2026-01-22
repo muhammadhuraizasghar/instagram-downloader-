@@ -5,11 +5,8 @@ import { Instagram, Download, Loader2, AlertCircle, Film, Image as ImageIcon, Pl
 import { motion, AnimatePresence } from "framer-motion";
 import axios from "axios";
 
-type ContentType = "post" | "video" | "story" | "audio";
-
 export default function Home() {
   const [url, setUrl] = useState("");
-  const [contentType, setContentType] = useState<ContentType>("post");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<any>(null);
@@ -23,33 +20,24 @@ export default function Home() {
     setResult(null);
 
     try {
-      const response = await axios.post("/api/download", { url, type: contentType });
+      const response = await axios.post("/api/download", { url });
       const data = response.data;
 
-      // Wrap URLs with proxy to avoid CORS/COEP issues
+      // Wrap URLs with proxy
       if (data.items) {
         data.items = data.items.map((item: any) => ({
           ...item,
-          proxyUrl: `/api/proxy?url=${encodeURIComponent(item.downloadUrl)}`
+          proxyUrl: `/api/proxy?url=${encodeURIComponent(item.url)}`
         }));
-      } else if (data.downloadUrl) {
-        data.proxyUrl = `/api/proxy?url=${encodeURIComponent(data.downloadUrl)}`;
       }
 
       setResult(data);
     } catch (err: any) {
-      setError(err.response?.data?.error || "Download failed. Please check the link and try again.");
+      setError(err.response?.data?.error || "Failed to process the link. Please try again.");
     } finally {
       setLoading(false);
     }
   };
-
-  const types = [
-    { id: "post", label: "Post", icon: ImageIcon },
-    { id: "video", label: "Reel/Video", icon: Film },
-    { id: "story", label: "Story", icon: Play },
-    { id: "audio", label: "Audio Only", icon: Music },
-  ];
 
   return (
     <div className="min-h-screen bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 font-sans selection:bg-purple-100 dark:selection:bg-purple-900/30">
@@ -66,33 +54,15 @@ export default function Home() {
             INSTA DOWNLOADER
           </h1>
           <p className="text-zinc-500 dark:text-zinc-400 font-medium text-center max-w-md px-4">
-            A minimalist 2D tool to download Instagram media. No tracking, no ads, just high-quality downloads.
+            Auto-detecting media downloader. Paste any Instagram link to get Video, Audio, or Images instantly.
           </p>
         </div>
 
         <div className="max-w-2xl mx-auto">
-          {/* Content Type Selector */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
-            {types.map((t) => (
-              <button
-                key={t.id}
-                onClick={() => setContentType(t.id as ContentType)}
-                className={`flex items-center justify-center gap-2 py-3 px-4 rounded-xl border-2 transition-all font-bold text-sm ${
-                  contentType === t.id
-                    ? "border-zinc-900 dark:border-white bg-zinc-900 dark:bg-white text-white dark:text-zinc-900"
-                    : "border-zinc-200 dark:border-zinc-800 hover:border-zinc-400 dark:hover:border-zinc-600"
-                }`}
-              >
-                <t.icon className="w-4 h-4" />
-                <span>{t.label}</span>
-              </button>
-            ))}
-          </div>
-
           <form onSubmit={handleDownload} className="relative group mb-12">
             <input
               type="text"
-              placeholder={`Paste Instagram ${contentType} link here...`}
+              placeholder="Paste Instagram link (Reel, Post, Story)..."
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               className="w-full px-6 py-5 bg-transparent border-2 border-zinc-200 dark:border-zinc-800 rounded-2xl focus:border-zinc-900 dark:focus:border-white outline-none transition-all font-medium text-lg placeholder:text-zinc-400"
@@ -103,7 +73,7 @@ export default function Home() {
               className="absolute right-3 top-3 bottom-3 px-6 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 rounded-xl font-bold hover:opacity-90 disabled:opacity-30 transition-all flex items-center gap-2"
             >
               {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
-              <span className="hidden md:inline">Download</span>
+              <span className="hidden md:inline">Fetch Media</span>
             </button>
           </form>
 
@@ -128,21 +98,19 @@ export default function Home() {
               >
                 <div className="bg-zinc-50 dark:bg-zinc-900 border-2 border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 md:p-8">
                   <div className="mb-6 flex items-center justify-between">
-                    <h3 className="text-xl font-black uppercase">Result Ready</h3>
+                    <h3 className="text-xl font-black uppercase truncate max-w-[70%]">
+                      {result.title || "Ready to Download"}
+                    </h3>
                     <span className="px-3 py-1 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 text-xs font-black rounded-full uppercase tracking-widest">
                       {result.type}
                     </span>
                   </div>
 
-                  {result.items ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {result.items.map((item: any, idx: number) => (
-                        <MediaCard key={idx} item={item} index={idx + 1} />
-                      ))}
-                    </div>
-                  ) : (
-                    <MediaCard item={result} />
-                  )}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {result.items.map((item: any, idx: number) => (
+                      <MediaCard key={idx} item={item} />
+                    ))}
+                  </div>
                 </div>
               </motion.div>
             )}
@@ -164,19 +132,24 @@ export default function Home() {
   );
 }
 
-function MediaCard({ item, index }: { item: any; index?: number }) {
-  const displayUrl = item.proxyUrl || item.downloadUrl;
+function MediaCard({ item }: { item: any }) {
+  const displayUrl = item.proxyUrl;
   
   return (
-    <div className="space-y-4">
-      <div className="aspect-square relative rounded-2xl overflow-hidden bg-zinc-200 dark:bg-zinc-800 border-2 border-zinc-200 dark:border-zinc-700">
-        {item.type === "video" || item.type === "audio" ? (
+    <div className="space-y-4 p-4 border-2 border-zinc-200 dark:border-zinc-800 rounded-2xl bg-white dark:bg-zinc-950">
+      <div className="aspect-square relative rounded-xl overflow-hidden bg-zinc-100 dark:bg-zinc-900">
+        {item.type === "video" ? (
           <video 
             src={displayUrl} 
             controls 
             className="w-full h-full object-contain"
             poster={item.thumbnail}
           />
+        ) : item.type === "audio" ? (
+          <div className="w-full h-full flex flex-col items-center justify-center gap-4 bg-zinc-100 dark:bg-zinc-900">
+            <Music className="w-16 h-16 text-zinc-400" />
+            <audio src={displayUrl} controls className="w-[80%]" />
+          </div>
         ) : (
           <img 
             src={displayUrl} 
@@ -185,16 +158,26 @@ function MediaCard({ item, index }: { item: any; index?: number }) {
           />
         )}
       </div>
-      <a
-        href={displayUrl}
-        download
-        target="_blank"
-        rel="noopener noreferrer"
-        className="w-full py-4 bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 font-black text-center rounded-xl hover:opacity-90 transition-all uppercase flex items-center justify-center gap-2"
-      >
-        <Download className="w-5 h-5" />
-        SAVE {item.type === 'audio' ? 'AUDIO' : (index ? `MEDIA ${index}` : 'TO DEVICE')}
-      </a>
+      
+      <div className="flex flex-col gap-2">
+        <p className="text-xs font-black uppercase text-zinc-400 tracking-tighter truncate">
+          {item.title}
+        </p>
+        <a
+          href={displayUrl}
+          download
+          target="_blank"
+          rel="noopener noreferrer"
+          className={`w-full py-3 rounded-xl font-black text-center transition-all uppercase flex items-center justify-center gap-2 text-sm ${
+            item.type === 'audio' 
+              ? 'bg-blue-500 text-white hover:bg-blue-600' 
+              : 'bg-zinc-900 dark:bg-white text-white dark:text-zinc-900 hover:opacity-90'
+          }`}
+        >
+          <Download className="w-4 h-4" />
+          Download {item.type}
+        </a>
+      </div>
     </div>
   );
 }

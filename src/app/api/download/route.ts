@@ -6,7 +6,7 @@ const execPromise = promisify(exec);
 
 export async function POST(req: NextRequest) {
   try {
-    const { url, type } = await req.json();
+    const { url } = await req.json();
 
     if (!url) {
       return NextResponse.json({ error: "URL is required" }, { status: 400 });
@@ -16,52 +16,76 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid Instagram URL" }, { status: 400 });
     }
 
-    // Command construction for yt-dlp
-    // --dump-json: just get the info, don't download yet
-    // --no-check-certificate: avoid ssl issues
-    let command = `yt-dlp --dump-json --no-check-certificate "${url}"`;
+    // Get metadata using yt-dlp
+    // --dump-json: get all info
+    // --no-playlist: only the specific post
+    let command = `yt-dlp --dump-json --no-check-certificate --no-playlist "${url}"`;
 
-    // If audio is requested, we still need the JSON first to get the direct links
     const { stdout, stderr } = await execPromise(command);
 
     if (stderr && !stdout) {
       console.error("yt-dlp error:", stderr);
-      return NextResponse.json({ error: "Could not fetch media info. Link might be private or restricted." }, { status: 403 });
+      return NextResponse.json({ error: "Could not fetch media. Link might be private or restricted." }, { status: 403 });
     }
 
     const info = JSON.parse(stdout);
 
-    // Handle single media vs multiple (carousel)
-    if (info.entries || info._type === "playlist") {
-      const items = (info.entries || []).map((entry: any) => ({
-        type: type === "audio" ? "audio" : (entry.vcodec !== "none" ? "video" : "image"),
-        downloadUrl: type === "audio" ? entry.url : entry.url,
-        thumbnail: entry.thumbnail,
-      }));
-      return NextResponse.json({ type: "carousel", items });
-    }
+    // Process items (handling potential carousel/playlist structure)
+    const processEntry = (entry: any) => {
+      const isVideo = entry.vcodec !== "none";
+      const mediaItems = [];
 
-    // For single item
-    let result = {
-      type: type === "audio" ? "audio" : (info.vcodec !== "none" ? "video" : "image"),
-      downloadUrl: info.url,
-      thumbnail: info.thumbnail,
+      // Always add the primary media (Video or Image)
+      mediaItems.push({
+        type: isVideo ? "video" : "image",
+        url: entry.url,
+        thumbnail: entry.thumbnail,
+        title: entry.title || "Media"
+      });
+
+      // If it's a video, find the best audio-only format
+      if (isVideo) {
+        const audioFormat = entry.formats
+          .filter((f: any) => f.vcodec === "none" && f.acodec !== "none")
+          .sort((a: any, b: any) => (b.abr || 0) - (a.abr || 0))[0];
+
+        if (audioFormat) {
+          mediaItems.push({
+            type: "audio",
+            url: audioFormat.url,
+            thumbnail: entry.thumbnail,
+            title: entry.title ? `${entry.title} (Audio)` : "Audio"
+          });
+        }
+      }
+
+      return mediaItems;
     };
 
-    // If it's a video and user wants audio, we can still use the direct URL if it's an m4a/mp3 
-    // or tell yt-dlp to get the best audio. yt-dlp usually provides a separate audio URL in 'formats'
-    if (type === "audio") {
-      const audioFormat = info.formats.reverse().find((f: any) => f.vcodec === "none" && f.acodec !== "none");
-      if (audioFormat) {
-        result.downloadUrl = audioFormat.url;
-        result.type = "audio";
-      }
+    let finalResult;
+
+    if (info.entries) {
+      // It's a carousel or multiple items
+      const allItems = info.entries.flatMap((entry: any) => processEntry(entry));
+      finalResult = {
+        type: "carousel",
+        items: allItems,
+        title: info.title
+      };
+    } else {
+      // Single item
+      const items = processEntry(info);
+      finalResult = {
+        type: items.length > 1 ? "multi-format" : items[0].type,
+        items: items,
+        title: info.title
+      };
     }
 
-    return NextResponse.json(result);
+    return NextResponse.json(finalResult);
 
   } catch (error: any) {
     console.error("Server error:", error);
-    return NextResponse.json({ error: "Instagram is blocking the request. Restricted links might need authentication." }, { status: 500 });
+    return NextResponse.json({ error: "Instagram blocked the request. Try again or check the link." }, { status: 500 });
   }
 }
