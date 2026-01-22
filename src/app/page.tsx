@@ -24,7 +24,19 @@ export default function Home() {
 
     try {
       const response = await axios.post("/api/download", { url, type: contentType });
-      setResult(response.data);
+      const data = response.data;
+
+      // Wrap URLs with proxy to avoid CORS/COEP issues
+      if (data.items) {
+        data.items = data.items.map((item: any) => ({
+          ...item,
+          proxyUrl: `/api/proxy?url=${encodeURIComponent(item.downloadUrl)}`
+        }));
+      } else if (data.downloadUrl) {
+        data.proxyUrl = `/api/proxy?url=${encodeURIComponent(data.downloadUrl)}`;
+      }
+
+      setResult(data);
     } catch (err: any) {
       setError(err.response?.data?.error || "Download failed. Please check the link and try again.");
     } finally {
@@ -153,26 +165,28 @@ export default function Home() {
 }
 
 function MediaCard({ item, index }: { item: any; index?: number }) {
+  const displayUrl = item.proxyUrl || item.downloadUrl;
+  
   return (
     <div className="space-y-4">
       <div className="aspect-square relative rounded-2xl overflow-hidden bg-zinc-200 dark:bg-zinc-800 border-2 border-zinc-200 dark:border-zinc-700">
         {item.type === "video" || item.type === "audio" ? (
           <video 
-            src={item.downloadUrl} 
+            src={displayUrl} 
             controls 
             className="w-full h-full object-contain"
             poster={item.thumbnail}
           />
         ) : (
           <img 
-            src={item.downloadUrl} 
+            src={displayUrl} 
             alt="Preview" 
             className="w-full h-full object-cover"
           />
         )}
       </div>
       <a
-        href={item.downloadUrl}
+        href={displayUrl}
         download
         target="_blank"
         rel="noopener noreferrer"
