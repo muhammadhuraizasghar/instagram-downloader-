@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Instagram, Download, Loader2, AlertCircle, Music, FileText, Info, Calendar, User, Eye, Heart, MessageCircle, Play, Search, X } from "lucide-react";
+import { Instagram, Download, Loader2, AlertCircle, Music, FileText, Info, Calendar, User, Eye, Heart, MessageCircle, Play, Search, X, ChevronDown, ChevronUp, Link as LinkIcon, Hash, Clock, Maximize } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import axios from "axios";
 import jsPDF from "jspdf";
@@ -244,8 +244,10 @@ function SkeletonCard() {
 }
 
 function EntrySection({ entry, index, onDownloadPDF }: { entry: any; index?: number; onDownloadPDF: () => void }) {
+  const [showFullMeta, setShowFullMeta] = useState(false);
+
   return (
-    <div className="w-full mb-8 last:mb-0">
+    <div className="w-full mb-8 last:mb-0 border-b border-zinc-100 dark:border-zinc-800 pb-4">
       {/* Post Header */}
       <div className="flex items-center justify-between px-4 py-3">
         <div className="flex items-center gap-3">
@@ -265,9 +267,14 @@ function EntrySection({ entry, index, onDownloadPDF }: { entry: any; index?: num
             <span className="text-[10px] text-zinc-500">{entry.metadata.upload_date || "Recent Post"}</span>
           </div>
         </div>
-        <button onClick={onDownloadPDF} className="text-zinc-400 hover:text-zinc-900 dark:hover:text-white">
-          <Info className="w-5 h-5" />
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={onDownloadPDF} title="Download Report" className="p-1.5 text-zinc-400 hover:text-blue-500 transition-colors">
+            <FileText className="w-4 h-4" />
+          </button>
+          <button onClick={() => setShowFullMeta(!showFullMeta)} className="p-1.5 text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-colors">
+            {showFullMeta ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+          </button>
+        </div>
       </div>
 
       {/* Media Grid */}
@@ -280,7 +287,7 @@ function EntrySection({ entry, index, onDownloadPDF }: { entry: any; index?: num
       {/* Insights */}
       <div className="px-4 py-3">
         <div className="flex items-center gap-4 mb-3">
-          <Heart className="w-6 h-6" />
+          <Heart className="w-6 h-6 text-red-500 fill-red-500" />
           <MessageCircle className="w-6 h-6" />
           <Download className="w-6 h-6" />
         </div>
@@ -288,7 +295,7 @@ function EntrySection({ entry, index, onDownloadPDF }: { entry: any; index?: num
           <span className="text-xs font-bold">{entry.metadata.like_count?.toLocaleString() || "0"} likes</span>
           <p className="text-xs">
             <span className="font-bold mr-2">{entry.metadata.uploader}</span>
-            <span className="text-zinc-600 dark:text-zinc-400 line-clamp-2">
+            <span className="text-zinc-600 dark:text-zinc-400 whitespace-pre-wrap break-words">
               {entry.metadata.description}
             </span>
           </p>
@@ -297,6 +304,75 @@ function EntrySection({ entry, index, onDownloadPDF }: { entry: any; index?: num
           </span>
         </div>
       </div>
+
+      {/* Expanded Meta Details */}
+      <AnimatePresence>
+        {showFullMeta && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden bg-zinc-50 dark:bg-zinc-900/50 mx-4 rounded-xl border border-zinc-100 dark:border-zinc-800"
+          >
+            <div className="p-4 space-y-4">
+              <h3 className="text-[10px] font-black uppercase tracking-widest text-zinc-400 border-b border-zinc-100 dark:border-zinc-800 pb-2">Full Media Metadata</h3>
+              
+              <div className="grid grid-cols-2 gap-3">
+                <FullMetaItem icon={User} label="Uploader" value={entry.metadata.uploader} />
+                <FullMetaItem icon={Calendar} label="Upload Date" value={entry.metadata.upload_date} />
+                <FullMetaItem icon={Eye} label="Views" value={entry.metadata.view_count?.toLocaleString() || "0"} />
+                <FullMetaItem icon={Heart} label="Likes" value={entry.metadata.like_count?.toLocaleString() || "0"} />
+                <FullMetaItem icon={MessageCircle} label="Comments" value={entry.metadata.comment_count?.toLocaleString() || "0"} />
+                <FullMetaItem icon={Clock} label="Duration" value={entry.metadata.duration} />
+              </div>
+
+              {entry.metadata.tags && entry.metadata.tags.length > 0 && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-1.5 text-zinc-400">
+                    <Hash className="w-3 h-3" />
+                    <span className="text-[9px] font-bold uppercase">Tags</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {entry.metadata.tags.slice(0, 15).map((tag: string, i: number) => (
+                      <span key={i} className="px-2 py-0.5 bg-zinc-200 dark:bg-zinc-800 rounded text-[9px] text-zinc-600 dark:text-zinc-400 font-medium">
+                        #{tag}
+                      </span>
+                    ))}
+                    {entry.metadata.tags.length > 15 && <span className="text-[9px] text-zinc-400">+{entry.metadata.tags.length - 15} more</span>}
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-1.5 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+                <div className="flex items-center gap-1.5 text-zinc-400">
+                  <LinkIcon className="w-3 h-3" />
+                  <span className="text-[9px] font-bold uppercase">Original Link</span>
+                </div>
+                <a 
+                  href={entry.metadata.webpage_url} 
+                  target="_blank" 
+                  rel="noopener noreferrer" 
+                  className="text-[10px] text-blue-500 font-medium truncate block hover:underline"
+                >
+                  {entry.metadata.webpage_url}
+                </a>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function FullMetaItem({ icon: Icon, label, value }: { icon: any; label: string; value: string | number }) {
+  return (
+    <div className="flex flex-col gap-0.5">
+      <div className="flex items-center gap-1.5 text-zinc-400">
+        <Icon className="w-3 h-3" />
+        <span className="text-[9px] font-bold uppercase">{label}</span>
+      </div>
+      <p className="text-[11px] font-bold text-zinc-800 dark:text-zinc-200 truncate">{value || "N/A"}</p>
     </div>
   );
 }
