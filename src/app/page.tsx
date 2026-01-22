@@ -159,7 +159,7 @@ export default function Home() {
 
         <div className="flex-grow">
           <AnimatePresence mode="wait">
-            {loading && (
+            {loading ? (
               <motion.div
                 key="loading"
                 initial={{ opacity: 0 }}
@@ -170,25 +170,23 @@ export default function Home() {
                 <SkeletonCard />
                 <SkeletonCard />
               </motion.div>
-            )}
-
-            {error && !loading && (
+            ) : error ? (
               <motion.div
                 key="error"
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
                 className="mx-4 p-4 bg-red-50 dark:bg-red-950/20 text-red-600 dark:text-red-400 text-xs font-medium rounded-xl flex items-center gap-3 border border-red-100 dark:border-red-900/30"
               >
                 <AlertCircle className="w-5 h-5 flex-shrink-0" />
                 <p>{error}</p>
               </motion.div>
-            )}
-
-            {result && !loading && (
+            ) : result ? (
               <motion.div
                 key="result"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
                 className="w-full"
               >
                 {/* Media Content Area */}
@@ -210,7 +208,7 @@ export default function Home() {
                   )}
                 </div>
               </motion.div>
-            )}
+            ) : null}
           </AnimatePresence>
         </div>
 
@@ -324,6 +322,21 @@ function EntrySection({ entry, index, onDownloadPDF }: { entry: any; index?: num
                 <FullMetaItem icon={Heart} label="Likes" value={entry.metadata.like_count?.toLocaleString() || "0"} />
                 <FullMetaItem icon={MessageCircle} label="Comments" value={entry.metadata.comment_count?.toLocaleString() || "0"} />
                 <FullMetaItem icon={Clock} label="Duration" value={entry.metadata.duration} />
+                <div className="col-span-2">
+                  <FullMetaItem icon={LinkIcon} label="Uploader URL" value={entry.metadata.uploader_url} isLink />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1.5 text-zinc-400">
+                  <Info className="w-3 h-3" />
+                  <span className="text-[9px] font-bold uppercase">Description</span>
+                </div>
+                <div className="p-3 bg-white dark:bg-black rounded-lg border border-zinc-100 dark:border-zinc-800">
+                  <p className="text-[10px] leading-relaxed text-zinc-600 dark:text-zinc-400 whitespace-pre-wrap break-words">
+                    {entry.metadata.description}
+                  </p>
+                </div>
               </div>
 
               {entry.metadata.tags && entry.metadata.tags.length > 0 && (
@@ -333,12 +346,12 @@ function EntrySection({ entry, index, onDownloadPDF }: { entry: any; index?: num
                     <span className="text-[9px] font-bold uppercase">Tags</span>
                   </div>
                   <div className="flex flex-wrap gap-1">
-                    {entry.metadata.tags.slice(0, 15).map((tag: string, i: number) => (
+                    {entry.metadata.tags.slice(0, 20).map((tag: string, i: number) => (
                       <span key={i} className="px-2 py-0.5 bg-zinc-200 dark:bg-zinc-800 rounded text-[9px] text-zinc-600 dark:text-zinc-400 font-medium">
                         #{tag}
                       </span>
                     ))}
-                    {entry.metadata.tags.length > 15 && <span className="text-[9px] text-zinc-400">+{entry.metadata.tags.length - 15} more</span>}
+                    {entry.metadata.tags.length > 20 && <span className="text-[9px] text-zinc-400">+{entry.metadata.tags.length - 20} more</span>}
                   </div>
                 </div>
               )}
@@ -365,14 +378,25 @@ function EntrySection({ entry, index, onDownloadPDF }: { entry: any; index?: num
   );
 }
 
-function FullMetaItem({ icon: Icon, label, value }: { icon: any; label: string; value: string | number }) {
+function FullMetaItem({ icon: Icon, label, value, isLink }: { icon: any; label: string; value: string | number; isLink?: boolean }) {
   return (
     <div className="flex flex-col gap-0.5">
       <div className="flex items-center gap-1.5 text-zinc-400">
         <Icon className="w-3 h-3" />
         <span className="text-[9px] font-bold uppercase">{label}</span>
       </div>
-      <p className="text-[11px] font-bold text-zinc-800 dark:text-zinc-200 truncate">{value || "N/A"}</p>
+      {isLink && value ? (
+        <a 
+          href={value.toString()} 
+          target="_blank" 
+          rel="noopener noreferrer" 
+          className="text-[11px] font-bold text-blue-500 truncate hover:underline"
+        >
+          {value}
+        </a>
+      ) : (
+        <p className="text-[11px] font-bold text-zinc-800 dark:text-zinc-200 truncate">{value || "N/A"}</p>
+      )}
     </div>
   );
 }
