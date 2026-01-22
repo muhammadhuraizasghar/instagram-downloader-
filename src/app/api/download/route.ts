@@ -16,37 +16,57 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid Instagram URL" }, { status: 400 });
     }
 
-    // Get metadata using yt-dlp
-    let command = `yt-dlp --dump-json --no-check-certificate --no-playlist "${url}"`;
+    // Get metadata using yt-dlp with more robust options
+    let command = `yt-dlp --dump-json --no-check-certificate --no-playlist --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36" "${url}"`;
 
     const { stdout, stderr } = await execPromise(command);
 
     if (stderr && !stdout) {
       console.error("yt-dlp error:", stderr);
-      return NextResponse.json({ error: "Could not fetch media. Link might be private or restricted." }, { status: 403 });
+      // Try a simpler command if the first one fails
+      command = `yt-dlp --dump-json "${url}"`;
+      const retry = await execPromise(command);
+      if (retry.stderr && !retry.stdout) {
+        return NextResponse.json({ error: "Could not fetch media. Link might be private or restricted." }, { status: 403 });
+      }
     }
 
     const info = JSON.parse(stdout);
 
     const processEntry = (entry: any) => {
-      const isVideo = entry.vcodec !== "none";
+      const isVideo = entry.vcodec !== "none" || entry.ext === "mp4" || entry.protocol?.includes("https");
       const mediaItems = [];
+
+      // Find best video format if it's a video
+      let bestUrl = entry.url;
+      if (isVideo && entry.formats) {
+        // Look for the best format that has both video and audio, or just the best video
+        const bestFormat = entry.formats
+          .filter((f: any) => f.vcodec !== "none" && f.url)
+          .sort((a: any, b: any) => (b.height || 0) - (a.height || 0))[0];
+        
+        if (bestFormat) {
+          bestUrl = bestFormat.url;
+        }
+      }
 
       // Add Video/Image
       mediaItems.push({
         type: isVideo ? "video" : "image",
-        url: entry.url,
+        url: bestUrl,
         thumbnail: entry.thumbnail,
         title: entry.title || "Media",
-        resolution: `${entry.width}x${entry.height}`,
-        ext: entry.ext,
-        filesize: entry.filesize_approx || entry.filesize || "Unknown"
+        resolution: entry.resolution || (entry.width && entry.height ? `${entry.width}x${entry.height}` : "HD"),
+        ext: entry.ext || (isVideo ? "mp4" : "jpg"),
+        filesize: entry.filesize_approx ? 
+          `${(entry.filesize_approx / 1024 / 1024).toFixed(1)} MB` : 
+          entry.filesize ? `${(entry.filesize / 1024 / 1024).toFixed(1)} MB` : "Unknown"
       });
 
       // If it's a video, add Audio option
       if (isVideo) {
         const audioFormat = entry.formats
-          .filter((f: any) => f.vcodec === "none" && f.acodec !== "none")
+          ?.filter((f: any) => (f.vcodec === "none" || !f.vcodec) && f.acodec !== "none" && f.url)
           .sort((a: any, b: any) => (b.abr || 0) - (a.abr || 0))[0];
 
         if (audioFormat) {
@@ -56,8 +76,10 @@ export async function POST(req: NextRequest) {
             thumbnail: entry.thumbnail,
             title: entry.title ? `${entry.title} (Audio)` : "Audio",
             resolution: "Audio only",
-            ext: audioFormat.ext || "mp3",
-            filesize: audioFormat.filesize || audioFormat.filesize_approx || "Unknown"
+            ext: audioFormat.ext || "m4a",
+            filesize: audioFormat.filesize_approx ? 
+              `${(audioFormat.filesize_approx / 1024 / 1024).toFixed(1)} MB` : 
+              audioFormat.filesize ? `${(audioFormat.filesize / 1024 / 1024).toFixed(1)} MB` : "Unknown"
           });
         }
       }
