@@ -35,19 +35,29 @@ export default function Home() {
       const data = response.data;
       setProgress(100);
 
-      // Add proxy URLs to all media items
+      // Add proxy URLs to all media items and thumbnails
       if (data.type === "carousel") {
         data.entries = data.entries.map((entry: any) => ({
           ...entry,
+          metadata: {
+            ...entry.metadata,
+            thumbnail: entry.metadata.thumbnail ? `/api/proxy?url=${encodeURIComponent(entry.metadata.thumbnail)}` : null
+          },
           items: entry.items.map((item: any) => ({
             ...item,
-            proxyUrl: `/api/proxy?url=${encodeURIComponent(item.url)}`
+            proxyUrl: `/api/proxy?url=${encodeURIComponent(item.url)}`,
+            thumbnail: item.thumbnail ? `/api/proxy?url=${encodeURIComponent(item.thumbnail)}` : null
           }))
         }));
       } else {
+        data.metadata = {
+          ...data.metadata,
+          thumbnail: data.metadata.thumbnail ? `/api/proxy?url=${encodeURIComponent(data.metadata.thumbnail)}` : null
+        };
         data.items = data.items.map((item: any) => ({
           ...item,
-          proxyUrl: `/api/proxy?url=${encodeURIComponent(item.url)}`
+          proxyUrl: `/api/proxy?url=${encodeURIComponent(item.url)}`,
+          thumbnail: item.thumbnail ? `/api/proxy?url=${encodeURIComponent(item.thumbnail)}` : null
         }));
       }
 
