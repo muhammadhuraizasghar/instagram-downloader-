@@ -7,12 +7,50 @@ import axios from "axios";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
+interface MediaItem {
+  type: 'video' | 'image' | 'audio';
+  url: string;
+  proxyUrl: string;
+  thumbnail?: string;
+  title?: string;
+  resolution?: string;
+  ext?: string;
+  filesize?: string;
+}
+
+interface Metadata {
+  uploader: string;
+  uploader_url: string;
+  upload_date: string;
+  description: string;
+  view_count: number;
+  like_count: number;
+  comment_count: number;
+  duration: string;
+  webpage_url: string;
+  tags: string[];
+  thumbnail?: string;
+}
+
+interface Entry {
+  items: MediaItem[];
+  metadata: Metadata;
+}
+
+interface DownloadResult {
+  type: 'single' | 'carousel';
+  title: string;
+  items?: MediaItem[];
+  metadata?: Metadata;
+  entries?: Entry[];
+}
+
 export default function Home() {
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<DownloadResult | null>(null);
 
   const handleDownload = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -37,13 +75,13 @@ export default function Home() {
 
       // Add proxy URLs to all media items and thumbnails
       if (data.type === "carousel") {
-        data.entries = data.entries.map((entry: any) => ({
+        data.entries = data.entries.map((entry: Entry) => ({
           ...entry,
           metadata: {
             ...entry.metadata,
             thumbnail: entry.metadata.thumbnail ? `/api/proxy?url=${encodeURIComponent(entry.metadata.thumbnail)}` : null
           },
-          items: entry.items.map((item: any) => ({
+          items: entry.items.map((item: MediaItem) => ({
             ...item,
             proxyUrl: `/api/proxy?url=${encodeURIComponent(item.url)}`,
             thumbnail: item.thumbnail ? `/api/proxy?url=${encodeURIComponent(item.thumbnail)}` : null
@@ -54,7 +92,7 @@ export default function Home() {
           ...data.metadata,
           thumbnail: data.metadata.thumbnail ? `/api/proxy?url=${encodeURIComponent(data.metadata.thumbnail)}` : null
         };
-        data.items = data.items.map((item: any) => ({
+        data.items = data.items.map((item: MediaItem) => ({
           ...item,
           proxyUrl: `/api/proxy?url=${encodeURIComponent(item.url)}`,
           thumbnail: item.thumbnail ? `/api/proxy?url=${encodeURIComponent(item.thumbnail)}` : null
@@ -71,7 +109,7 @@ export default function Home() {
     }
   };
 
-  const downloadMetadataPDF = (metadata: any, title: string) => {
+  const downloadMetadataPDF = (metadata: Metadata, title: string) => {
     const doc = new jsPDF();
     doc.setFontSize(20);
     doc.text("Media Metadata Report", 14, 22);
@@ -97,7 +135,7 @@ export default function Home() {
       head: [tableData[0]],
       body: tableData.slice(1),
       theme: 'grid',
-      headStyles: { fillStyle: 'DFDFDF', textColor: 20 },
+      headStyles: { fillColor: [223, 223, 223], textColor: 20 },
     });
 
     doc.save(`${title.substring(0, 20)}_metadata.pdf`);
@@ -202,19 +240,20 @@ export default function Home() {
                 {/* Media Content Area */}
                 <div className="w-full">
                   {result.type === "carousel" ? (
-                    result.entries.map((entry: any, eIdx: number) => (
+                    result.entries?.map((entry: Entry, eIdx: number) => (
                       <EntrySection 
                         key={eIdx} 
                         entry={entry} 
-                        index={eIdx + 1} 
                         onDownloadPDF={() => downloadMetadataPDF(entry.metadata, `${result.title} - Slide ${eIdx + 1}`)}
                       />
                     ))
                   ) : (
-                    <EntrySection 
-                      entry={result} 
-                      onDownloadPDF={() => downloadMetadataPDF(result.metadata, result.title)}
-                    />
+                    result.items && result.metadata && (
+                      <EntrySection 
+                        entry={{ items: result.items, metadata: result.metadata }} 
+                        onDownloadPDF={() => downloadMetadataPDF(result.metadata!, result.title)}
+                      />
+                    )
                   )}
                 </div>
               </motion.div>
@@ -251,7 +290,7 @@ function SkeletonCard() {
   );
 }
 
-function EntrySection({ entry, index, onDownloadPDF }: { entry: any; index?: number; onDownloadPDF: () => void }) {
+function EntrySection({ entry, onDownloadPDF }: { entry: Entry; onDownloadPDF: () => void }) {
   const [showFullMeta, setShowFullMeta] = useState(false);
 
   return (
@@ -287,7 +326,7 @@ function EntrySection({ entry, index, onDownloadPDF }: { entry: any; index?: num
 
       {/* Media Grid */}
       <div className="flex flex-col">
-        {entry.items.map((item: any, iIdx: number) => (
+        {entry.items.map((item: MediaItem, iIdx: number) => (
           <MediaCard key={iIdx} item={item} />
         ))}
       </div>
@@ -388,7 +427,7 @@ function EntrySection({ entry, index, onDownloadPDF }: { entry: any; index?: num
   );
 }
 
-function FullMetaItem({ icon: Icon, label, value, isLink }: { icon: any; label: string; value: string | number; isLink?: boolean }) {
+function FullMetaItem({ icon: Icon, label, value, isLink }: { icon: React.ElementType; label: string; value: string | number; isLink?: boolean }) {
   return (
     <div className="flex flex-col gap-0.5">
       <div className="flex items-center gap-1.5 text-zinc-400">
@@ -411,19 +450,9 @@ function FullMetaItem({ icon: Icon, label, value, isLink }: { icon: any; label: 
   );
 }
 
-function MetaItem({ icon: Icon, label, value }: { icon: any; label: string; value: string | number }) {
-  return (
-    <div className="bg-zinc-50 dark:bg-zinc-800/50 p-2 border border-zinc-100 dark:border-zinc-800 rounded-lg">
-      <div className="flex items-center gap-1 text-zinc-400 mb-0.5">
-        <Icon className="w-2 h-2" />
-        <span className="text-[7px] font-black uppercase tracking-tighter">{label}</span>
-      </div>
-      <p className="text-[9px] font-black truncate">{value}</p>
-    </div>
-  );
-}
 
-function MediaCard({ item }: { item: any }) {
+
+function MediaCard({ item }: { item: MediaItem }) {
   const displayUrl = item.proxyUrl;
   
   return (
